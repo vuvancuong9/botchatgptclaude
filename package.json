@@ -1,0 +1,35 @@
+{
+  "name": "ai-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "smoke:supabase": "node --import tsx scripts/ai-orchestrator-smoke-supabase.ts",
+    "smoke:worker-claim": "node --import tsx scripts/ai-orchestrator-smoke-worker-claim.ts",
+    "smoke:worker-lease": "node --import tsx scripts/ai-orchestrator-smoke-worker-lease.ts",
+    "ai:create-owner": "node --import tsx scripts/ai-orchestrator-create-owner.ts",
+    "ai:worker": "node --import tsx scripts/ai-orchestrator-worker.ts",
+    "readiness": "node --import tsx scripts/ai-orchestrator-readiness.ts",
+    "prod:dry-run": "node --import tsx scripts/ai-orchestrator-production-dry-run.ts",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.107.0",
+    "next": "15.5.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.0.0",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

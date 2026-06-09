@@ -1,0 +1,43 @@
+# =============================================================================
+# AI Orchestrator — sandbox worker (execution plane).
+#
+#   docker build -f Dockerfile.ai-worker -t ai-orchestrator-worker .
+#   docker run --env-file .env.worker ai-orchestrator-worker
+#
+# Runs as a NON-ROOT user. No secrets are baked into the image — all config is
+# provided at runtime via --env-file / -e. The worker only runs allowlisted
+# commands (no shell), never merges, never deploys.
+# =============================================================================
+
+# Node 22 ships node:sqlite and matches the project's engine expectations.
+FROM node:22-bookworm-slim
+
+# git is required to check out repos/branches into the isolated workspace.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies first for better layer caching.
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Application source.
+COPY . .
+
+# Writable workspace dir owned by the unprivileged runtime user.
+RUN mkdir -p /app/.ai-orchestrator/workspaces \
+  && chown -R node:node /app/.ai-orchestrator
+
+# Drop privileges — the worker must NEVER run as root.
+USER node
+
+# Safe production defaults (override at runtime via env).
+ENV NODE_ENV=production \
+    AI_ORCHESTRATOR_WORKER_PROVIDER=database \
+    AI_ORCHESTRATOR_ALLOW_INLINE_COMMANDS=0 \
+    AI_ORCHESTRATOR_WORKER_CONCURRENCY=1 \
+    NEXT_TELEMETRY_DISABLED=1
+
+CMD ["npm", "run", "ai:worker"]
