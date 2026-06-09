@@ -131,6 +131,8 @@ export type AuditEventType =
   | "user_created"
   | "user_disabled"
   | "user_enabled"
+  | "user_password_set"
+  | "model_key_updated"
   | "api_key_created"
   | "api_key_revoked"
   | "permission_denied"
@@ -211,6 +213,15 @@ export interface UserRecord {
   created_at: string;
   updated_at: string;
   last_seen_at: string | null;
+  /** Phase 10: scrypt hash for web login (null when no password set). */
+  password_hash: string | null;
+}
+
+/** Phase 10: key-value app settings (secret values are AES-encrypted). */
+export interface SettingRecord {
+  key: string;
+  value: string;
+  updated_at: string;
 }
 
 export interface ApiKeyRecord {

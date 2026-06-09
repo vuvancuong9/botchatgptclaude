@@ -24,6 +24,7 @@ import {
   SessionCollaboratorRecord,
   SessionDetail,
   SessionRecord,
+  SettingRecord,
   StepName,
   UserRecord,
   UserRole,
@@ -391,6 +392,15 @@ export class OrchestratorRepository implements AiOrchestratorRepository {
     this.db
       .prepare(`UPDATE ai_users SET last_seen_at = ? WHERE id = ?`)
       .run(now(), id);
+  }
+
+  async updateUserPassword(
+    id: string,
+    passwordHash: string | null,
+  ): Promise<void> {
+    this.db
+      .prepare(`UPDATE ai_users SET password_hash = ?, updated_at = ? WHERE id = ?`)
+      .run(passwordHash, now(), id);
   }
 
   async createApiKey(args: {
@@ -1210,6 +1220,28 @@ export class OrchestratorRepository implements AiOrchestratorRepository {
       .run(now(), runId);
   }
 
+  async getSetting(key: string): Promise<SettingRecord | null> {
+    const row = this.db
+      .prepare(`SELECT key, value, updated_at FROM ai_settings WHERE key = ?`)
+      .get(key) as Record<string, unknown> | undefined;
+    return row
+      ? {
+          key: row.key as string,
+          value: row.value as string,
+          updated_at: row.updated_at as string,
+        }
+      : null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO ai_settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(key, value, now());
+  }
+
   async ping(): Promise<void> {
     this.db.prepare("SELECT 1").get();
   }
@@ -1386,6 +1418,7 @@ function mapUser(r: Record<string, unknown>): UserRecord {
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
     last_seen_at: (r.last_seen_at as string | null) ?? null,
+    password_hash: (r.password_hash as string | null) ?? null,
   };
 }
 

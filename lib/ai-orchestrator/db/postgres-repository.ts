@@ -23,6 +23,7 @@ import {
   SessionCollaboratorRecord,
   SessionDetail,
   SessionRecord,
+  SettingRecord,
   StepName,
   UserRecord,
   UserRole,
@@ -61,6 +62,7 @@ const T_WORKER_JOBS = "ai_worker_jobs";
 const T_WORKER_JOB_LOGS = "ai_worker_job_logs";
 const T_ORCH_RUNS = "ai_orchestration_runs";
 const T_ORCH_EVENTS = "ai_orchestration_events";
+const T_SETTINGS = "ai_settings";
 
 function now(): string {
   return new Date().toISOString();
@@ -359,8 +361,20 @@ export class PostgresRepository implements AiOrchestratorRepository {
       created_at: now(),
       updated_at: now(),
       last_seen_at: null,
+      password_hash: null,
     };
-    await this.db.insert(T_USERS, record as unknown as Record<string, unknown>);
+    // Insert base columns only (password_hash defaults null) so this works
+    // before the Phase 10 migration is applied.
+    await this.db.insert(T_USERS, {
+      id: record.id,
+      email: record.email,
+      display_name: record.display_name,
+      role: record.role,
+      status: record.status,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+      last_seen_at: record.last_seen_at,
+    });
     return record;
   }
 
@@ -394,6 +408,17 @@ export class PostgresRepository implements AiOrchestratorRepository {
 
   async updateUserLastSeen(id: string): Promise<void> {
     await this.db.update(T_USERS, { id }, { last_seen_at: now() });
+  }
+
+  async updateUserPassword(
+    id: string,
+    passwordHash: string | null,
+  ): Promise<void> {
+    await this.db.update(
+      T_USERS,
+      { id },
+      { password_hash: passwordHash, updated_at: now() },
+    );
   }
 
   async createApiKey(args: {
@@ -1190,6 +1215,31 @@ export class PostgresRepository implements AiOrchestratorRepository {
     );
   }
 
+  async getSetting(key: string): Promise<SettingRecord | null> {
+    const row = await this.db.selectOne<Record<string, unknown>>(T_SETTINGS, {
+      key,
+    });
+    return row
+      ? {
+          key: row.key as string,
+          value: row.value as string,
+          updated_at: String(row.updated_at),
+        }
+      : null;
+  }
+
+  async setSetting(key: string, value: string): Promise<void> {
+    const existing = await this.db.selectOne<Record<string, unknown>>(
+      T_SETTINGS,
+      { key },
+    );
+    if (existing) {
+      await this.db.update(T_SETTINGS, { key }, { value, updated_at: now() });
+    } else {
+      await this.db.insert(T_SETTINGS, { key, value, updated_at: now() });
+    }
+  }
+
   async ping(): Promise<void> {
     // A trivial bounded read verifies connectivity + that the table exists.
     await this.db.selectMany(T_SESSIONS, {}, { limit: 1 });
@@ -1387,6 +1437,7 @@ function mapUser(r: Record<string, unknown>): UserRecord {
     created_at: String(r.created_at),
     updated_at: String(r.updated_at),
     last_seen_at: r.last_seen_at ? String(r.last_seen_at) : null,
+    password_hash: r.password_hash ? String(r.password_hash) : null,
   };
 }
 

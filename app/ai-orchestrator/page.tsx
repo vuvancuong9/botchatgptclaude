@@ -119,6 +119,17 @@ interface MeInfo {
   legacyAdmin: boolean;
 }
 
+/** Model API key status (Phase 10) — never includes the key values. */
+interface ModelKeyStatus {
+  openai_set: boolean;
+  anthropic_set: boolean;
+  openai_in_db: boolean;
+  anthropic_in_db: boolean;
+  openai_model: string | null;
+  anthropic_model: string | null;
+  encryption_configured: boolean;
+}
+
 interface PullRequestLite {
   status: string;
   github_pr_url: string | null;
@@ -291,12 +302,15 @@ export default function OrchestratorPage() {
   const [asyncRun, setAsyncRun] = useState<AsyncRunView | null>(null);
   const [readiness, setReadiness] = useState<ReadinessView | null>(null);
   const [dryRun, setDryRun] = useState<DryRunView | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [modelKeys, setModelKeys] = useState<ModelKeyStatus | null>(null);
   const autoResumedRef = useRef(false);
 
   // Load the API key from sessionStorage (NOT localStorage) on mount.
   useEffect(() => {
     const saved = sessionStorage.getItem(API_KEY_STORAGE);
     if (saved) setAdminKey(saved);
+    else setAuthChecked(true); // no key → show the login screen immediately
   }, []);
 
   const onAdminKeyChange = useCallback((value: string) => {
@@ -340,8 +354,57 @@ export default function OrchestratorPage() {
       else setMe(null);
     } catch {
       setMe(null);
+    } finally {
+      setAuthChecked(true);
     }
   }, [apiFetch]);
+
+  /** Web login: email + password → server returns a short-lived API key. */
+  const login = useCallback(
+    async (email: string, password: string) => {
+      const res = await fetch("/api/ai-orchestrator/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Đăng nhập thất bại");
+      onAdminKeyChange(data.api_key); // stores key → triggers loadMe → app shows
+    },
+    [onAdminKeyChange],
+  );
+
+  const logout = useCallback(() => {
+    onAdminKeyChange("");
+    setMe(null);
+    setDetail(null);
+    setAsyncRun(null);
+    setSessions([]);
+    setHealth(null);
+    setAuthChecked(true);
+  }, [onAdminKeyChange]);
+
+  const checkModelKeys = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/ai-orchestrator/settings/model-keys");
+      if (res.ok) setModelKeys(await res.json());
+    } catch {
+      /* ignore */
+    }
+  }, [apiFetch]);
+
+  const saveModelKeys = useCallback(
+    async (payload: Record<string, string>) => {
+      const res = await apiFetch("/api/ai-orchestrator/settings/model-keys", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Lưu thất bại");
+      setModelKeys(data);
+    },
+    [apiFetch],
+  );
 
   const can = useCallback(
     (perm: string) => Boolean(me?.permissions?.includes(perm)),
@@ -665,6 +728,18 @@ export default function OrchestratorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminKey]);
 
+  // --- Login gate: the app is hidden until authenticated (Phase 10) ---
+  if (!me) {
+    if (!authChecked) {
+      return (
+        <main style={{ maxWidth: 420, margin: "80px auto", padding: 24 }}>
+          <p style={{ color: "#9aa7ba" }}>Đang tải…</p>
+        </main>
+      );
+    }
+    return <LoginGate onLogin={login} onUseApiKey={onAdminKeyChange} />;
+  }
+
   return (
     <main
       style={{
@@ -772,13 +847,16 @@ export default function OrchestratorPage() {
               (ai:run).
             </p>
           )}
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
               onClick={() => void checkHealth()}
               disabled={adminKey.length === 0}
               style={btn("ghost")}
             >
               Check Health
+            </button>
+            <button onClick={logout} style={btn("red")}>
+              Đăng xuất
             </button>
           </div>
           {health && (
@@ -888,10 +966,20 @@ export default function OrchestratorPage() {
                 >
                   Production Dry-run Check
                 </button>
+                <button
+                  onClick={() => void checkModelKeys()}
+                  disabled={adminKey.length === 0}
+                  style={btn("ghost")}
+                >
+                  Model API keys
+                </button>
               </div>
             )}
           {readiness && <ReadinessPanel report={readiness} />}
           {dryRun && <DryRunPanel status={dryRun} />}
+          {modelKeys !== null && (
+            <ModelKeysPanel status={modelKeys} onSave={saveModelKeys} />
+          )}
         </div>
 
         <div style={panelStyle()}>
@@ -1577,6 +1665,212 @@ function DryRunPanel({ status }: { status: DryRunView }) {
           </ol>
         </div>
       )}
+    </div>
+  );
+}
+
+const GATE_INPUT: React.CSSProperties = {
+  width: "100%",
+  marginTop: 6,
+  background: "#0b0f17",
+  color: "#e6edf6",
+  border: "1px solid #263043",
+  borderRadius: 8,
+  padding: 10,
+  boxSizing: "border-box",
+};
+
+function LoginGate({
+  onLogin,
+  onUseApiKey,
+}: {
+  onLogin: (email: string, password: string) => Promise<void>;
+  onUseApiKey: (key: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+
+  const submit = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await onLogin(email.trim(), password);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main style={{ maxWidth: 400, margin: "70px auto", padding: 24 }}>
+      <h1 style={{ marginTop: 0 }}>AI Orchestrator</h1>
+      <p style={{ color: "#9aa7ba", marginTop: -8 }}>Đăng nhập để tiếp tục</p>
+      <div style={panelStyle()}>
+        <label style={{ fontWeight: 600, display: "block" }}>Email</label>
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@example.com"
+          style={GATE_INPUT}
+        />
+        <label style={{ fontWeight: 600, display: "block", marginTop: 10 }}>
+          Mật khẩu
+        </label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void submit();
+          }}
+          style={GATE_INPUT}
+        />
+        <button
+          onClick={() => void submit()}
+          disabled={busy || !email || !password}
+          style={{ ...btn("primary"), marginTop: 12, width: "100%" }}
+        >
+          {busy ? "Đang đăng nhập…" : "Đăng nhập"}
+        </button>
+        {err && <p style={{ color: "#e74c3c", marginBottom: 0 }}>⚠ {err}</p>}
+        <div style={{ marginTop: 12 }}>
+          <button
+            onClick={() => setAdvanced(!advanced)}
+            style={{ ...btn("ghost"), padding: "2px 8px", fontSize: 12 }}
+          >
+            {advanced ? "Ẩn" : "Dùng API key trực tiếp"}
+          </button>
+        </div>
+        {advanced && (
+          <div style={{ marginTop: 8 }}>
+            <input
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="aiorch_..."
+              style={GATE_INPUT}
+            />
+            <button
+              onClick={() => onUseApiKey(apiKey.trim())}
+              disabled={!apiKey}
+              style={{ ...btn("ghost"), marginTop: 6, width: "100%" }}
+            >
+              Vào bằng API key
+            </button>
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function ModelKeysPanel({
+  status,
+  onSave,
+}: {
+  status: ModelKeyStatus | null;
+  onSave: (payload: Record<string, string>) => Promise<void>;
+}) {
+  const [openai, setOpenai] = useState("");
+  const [anthropic, setAnthropic] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    setBusy(true);
+    setMsg(null);
+    setErr(null);
+    const payload: Record<string, string> = {};
+    if (openai) payload.openai_api_key = openai.trim();
+    if (anthropic) payload.anthropic_api_key = anthropic.trim();
+    if (Object.keys(payload).length === 0) {
+      setErr("Nhập ít nhất 1 key.");
+      setBusy(false);
+      return;
+    }
+    try {
+      await onSave(payload);
+      setOpenai("");
+      setAnthropic("");
+      setMsg("Đã lưu (mã hoá trong DB).");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const label = (set: boolean, inDb: boolean) =>
+    set ? (inDb ? "đã set (web)" : "đã set (env)") : "chưa set";
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        background: "#0b0f17",
+        border: "1px solid #263043",
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 12.5,
+      }}
+    >
+      <strong>Model API keys (Claude / OpenAI)</strong>
+      {status && (
+        <div style={{ marginTop: 6, color: "#9aa7ba" }}>
+          OpenAI:{" "}
+          <strong style={{ color: status.openai_set ? "#5cb85c" : "#e74c3c" }}>
+            {label(status.openai_set, status.openai_in_db)}
+          </strong>{" "}
+          · Claude:{" "}
+          <strong style={{ color: status.anthropic_set ? "#5cb85c" : "#e74c3c" }}>
+            {label(status.anthropic_set, status.anthropic_in_db)}
+          </strong>
+          {!status.encryption_configured && (
+            <div style={{ color: "#f0ad4e", marginTop: 4 }}>
+              ⚠ Chưa cấu hình mã hoá (AI_ORCHESTRATOR_API_KEY_PEPPER) — không lưu
+              được key.
+            </div>
+          )}
+        </div>
+      )}
+      <label style={{ display: "block", marginTop: 10 }}>OpenAI API key</label>
+      <input
+        type="password"
+        value={openai}
+        onChange={(e) => setOpenai(e.target.value)}
+        placeholder="sk-..."
+        style={GATE_INPUT}
+      />
+      <label style={{ display: "block", marginTop: 10 }}>
+        Anthropic (Claude) API key
+      </label>
+      <input
+        type="password"
+        value={anthropic}
+        onChange={(e) => setAnthropic(e.target.value)}
+        placeholder="sk-ant-..."
+        style={GATE_INPUT}
+      />
+      <div style={{ marginTop: 10 }}>
+        <button
+          onClick={() => void save()}
+          disabled={busy}
+          style={btn("primary")}
+        >
+          {busy ? "Đang lưu…" : "Lưu key (mã hoá)"}
+        </button>
+        {msg && <span style={{ color: "#5cb85c", marginLeft: 8 }}>{msg}</span>}
+        {err && <span style={{ color: "#e74c3c", marginLeft: 8 }}>⚠ {err}</span>}
+      </div>
+      <div style={{ marginTop: 8, color: "#9aa7ba", fontSize: 11 }}>
+        Để trống = giữ nguyên. Key được mã hoá AES-256 lưu trong Supabase, không
+        bao giờ hiển thị lại. Lưu xong chạy lại orchestration để dùng key mới.
+      </div>
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   SessionCollaboratorRecord,
   SessionDetail,
   SessionRecord,
+  SettingRecord,
   StepName,
   UserRecord,
   UserRole,
@@ -118,6 +119,8 @@ export interface AiOrchestratorRepository {
   listUsers(limit?: number): Promise<UserRecord[]>;
   updateUserStatus(id: string, status: "active" | "disabled"): Promise<void>;
   updateUserLastSeen(id: string): Promise<void>;
+  /** Phase 10: set/clear the scrypt password hash for web login. */
+  updateUserPassword(id: string, passwordHash: string | null): Promise<void>;
 
   createApiKey(args: {
     userId: string;
@@ -330,6 +333,10 @@ export interface AiOrchestratorRepository {
   ): Promise<void>;
   /** Increment the resume-attempt counter (diagnostics / backoff). */
   incrementOrchestrationResumeAttempt(runId: string): Promise<void>;
+
+  // --- App settings (Phase 10: encrypted model keys, etc.) ---
+  getSetting(key: string): Promise<SettingRecord | null>;
+  setSetting(key: string, value: string): Promise<void>;
 
   /** Lightweight connectivity probe for the health endpoint. Throws on failure. */
   ping(): Promise<void>;

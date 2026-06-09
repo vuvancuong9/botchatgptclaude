@@ -37,6 +37,10 @@ import {
 } from "./test-runner-worker";
 import { AsyncOrchestrator, AsyncResult } from "./async-orchestrator";
 import { resumeDueOrchestrations } from "./orchestration-resume-scheduler";
+import { resolveModelKeys } from "./settings";
+import { OpenAIAdapter } from "./adapters/openai.adapter";
+import { AnthropicAdapter } from "./adapters/anthropic.adapter";
+import { AIAdapter } from "./adapters/types";
 import {
   OrchestrationEventRecord,
   OrchestrationRunRecord,
@@ -130,8 +134,11 @@ export async function runOrchestration(
         })
       : undefined;
 
+  const adapters = await buildModelAdapters();
   const orchestrator = new Orchestrator(repo, {
     executeTests: process.env.AI_ORCHESTRATOR_EXECUTE_TESTS === "1",
+    openai: adapters.openai,
+    anthropic: adapters.anthropic,
     ...opts,
     testExecutor: opts.testExecutor ?? workerExecutor,
   });
@@ -429,11 +436,27 @@ export function currentWorkerProvider(): "database" | "local" {
 // Phase 7.3 — async (resumable) orchestration.
 // =============================================================================
 
-function buildAsyncOrchestrator(opts: {
+/** Build model adapters from the resolved keys (DB-stored first, else env). */
+export async function buildModelAdapters(): Promise<{
+  openai: AIAdapter;
+  anthropic: AIAdapter;
+}> {
+  const keys = await resolveModelKeys();
+  return {
+    openai: new OpenAIAdapter({ apiKey: keys.openai, model: keys.openaiModel }),
+    anthropic: new AnthropicAdapter({
+      apiKey: keys.anthropic,
+      model: keys.anthropicModel,
+    }),
+  };
+}
+
+async function buildAsyncOrchestrator(opts: {
   userId: string | null;
   adminKeyFingerprint: string | null;
   humanApproved?: boolean;
-}): AsyncOrchestrator {
+}): Promise<AsyncOrchestrator> {
+  const adapters = await buildModelAdapters();
   return new AsyncOrchestrator({
     repo: getRepository(),
     queue: getJobQueue(),
@@ -442,6 +465,8 @@ function buildAsyncOrchestrator(opts: {
     humanApproved: opts.humanApproved ?? false,
     userId: opts.userId,
     adminKeyFingerprint: opts.adminKeyFingerprint,
+    openai: adapters.openai,
+    anthropic: adapters.anthropic,
   });
 }
 
@@ -451,11 +476,13 @@ export async function startAsyncOrchestrationForContext(
   request: string,
   humanApproved: boolean,
 ): Promise<AsyncResult> {
-  return buildAsyncOrchestrator({
-    userId: ctx.userId,
-    adminKeyFingerprint: ctx.keyFingerprint,
-    humanApproved,
-  }).start(request);
+  return (
+    await buildAsyncOrchestrator({
+      userId: ctx.userId,
+      adminKeyFingerprint: ctx.keyFingerprint,
+      humanApproved,
+    })
+  ).start(request);
 }
 
 /** Resume an async orchestration after its worker job completes. */
@@ -475,11 +502,13 @@ export async function resumeOrchestration(
     adminKeyFingerprint: ctx.keyFingerprint,
     metadata: { orchestrationRunId: runId },
   });
-  return buildAsyncOrchestrator({
-    userId: ctx.userId,
-    adminKeyFingerprint: ctx.keyFingerprint,
-    humanApproved,
-  }).resume(runId);
+  return (
+    await buildAsyncOrchestrator({
+      userId: ctx.userId,
+      adminKeyFingerprint: ctx.keyFingerprint,
+      humanApproved,
+    })
+  ).resume(runId);
 }
 
 /**
@@ -491,11 +520,13 @@ export async function startOrchestrationSystem(
   humanApproved = false,
   userId: string | null = null,
 ): Promise<AsyncResult> {
-  return buildAsyncOrchestrator({
-    userId,
-    adminKeyFingerprint: null,
-    humanApproved,
-  }).start(request);
+  return (
+    await buildAsyncOrchestrator({
+      userId,
+      adminKeyFingerprint: null,
+      humanApproved,
+    })
+  ).start(request);
 }
 
 /**
@@ -510,11 +541,13 @@ export async function resumeOrchestrationSystem(
   const humanApproved = Boolean(
     (run?.state as { humanApproved?: boolean } | undefined)?.humanApproved,
   );
-  return buildAsyncOrchestrator({
-    userId: run?.user_id ?? null,
-    adminKeyFingerprint: null,
-    humanApproved,
-  }).resume(runId);
+  return (
+    await buildAsyncOrchestrator({
+      userId: run?.user_id ?? null,
+      adminKeyFingerprint: null,
+      humanApproved,
+    })
+  ).resume(runId);
 }
 
 /** Cancel an async orchestration + its pending worker job. */
