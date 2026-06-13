@@ -62,6 +62,36 @@ const STATUS_COLOR: Record<string, string> = {
   running: "#4f8cff",
 };
 
+const BADGE_LABELS: Record<string, string> = {
+  running: "đang chạy",
+  passed: "thành công",
+  failed: "thất bại",
+  needs_revision: "cần sửa",
+  rejected: "từ chối",
+  cancelled: "đã huỷ",
+  queued: "trong hàng đợi",
+  waiting_for_worker: "đợi worker",
+  pending: "chờ duyệt",
+  approved: "đã duyệt",
+  active: "hoạt động",
+  revoked: "đã thu hồi",
+  disabled: "vô hiệu",
+  ok: "ok",
+  fail: "lỗi",
+  dry_run: "chạy thử",
+  created: "đã tạo",
+  ready: "sẵn sàng",
+  "not-ready": "chưa sẵn sàng",
+  safe: "an toàn",
+  "not-safe": "chưa an toàn",
+  warnings: "có cảnh báo",
+  owner: "chủ sở hữu",
+  admin: "quản trị",
+  developer: "lập trình viên",
+  reviewer: "người duyệt",
+  viewer: "người xem",
+};
+
 function Badge({ value }: { value: string }) {
   return (
     <span
@@ -74,7 +104,7 @@ function Badge({ value }: { value: string }) {
         fontSize: 12,
       }}
     >
-      {value}
+      {BADGE_LABELS[value] ?? value}
     </span>
   );
 }
@@ -430,7 +460,7 @@ export default function OrchestratorPage() {
         body: JSON.stringify({ request, humanApproved }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Run failed");
+      if (!res.ok) throw new Error(data.error ?? "Chạy thất bại");
       if (data.orchestration_run_id) {
         // worker_async: the request returned immediately (202).
         autoResumedRef.current = false;
@@ -568,7 +598,7 @@ export default function OrchestratorPage() {
       try {
         const res = await apiFetch(`/api/ai-orchestrator/sessions/${id}`);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Not found");
+        if (!res.ok) throw new Error(data.error ?? "Không tìm thấy");
         setDetail(data);
       } catch (e) {
         setError((e as Error).message);
@@ -590,7 +620,7 @@ export default function OrchestratorPage() {
           },
         );
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed");
+        if (!res.ok) throw new Error(data.error ?? "Thất bại");
         setDetail(data);
         await loadSessions();
       } catch (e) {
@@ -676,7 +706,7 @@ export default function OrchestratorPage() {
       );
       const data = await res.json();
       if (res.ok && data.job_id) await refreshJob(data.job_id);
-      else setError(data.error ?? "Could not create test job");
+      else setError(data.error ?? "Không tạo được job test");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -753,16 +783,16 @@ export default function OrchestratorPage() {
     >
       {/* Sidebar: session history */}
       <aside>
-        <h3 style={{ marginTop: 0 }}>Sessions</h3>
+        <h3 style={{ marginTop: 0 }}>Phiên</h3>
         <button
           onClick={() => void loadSessions()}
           style={btn("ghost")}
         >
-          Refresh
+          Tải lại
         </button>
         <div style={{ marginTop: 12 }}>
           {sessions.length === 0 && (
-            <p style={{ color: "#9aa7ba" }}>No sessions yet.</p>
+            <p style={{ color: "#9aa7ba" }}>Chưa có phiên nào.</p>
           )}
           {sessions.map((s) => (
             <div
@@ -799,7 +829,7 @@ export default function OrchestratorPage() {
       <section>
         <h1 style={{ marginTop: 0 }}>AI Orchestrator</h1>
         <p style={{ color: "#9aa7ba", marginTop: -8 }}>
-          GPT ⇄ Claude, controlled. Max 3 revision rounds, safety guarded.
+          GPT ⇄ Claude, có kiểm soát. Tối đa 3 vòng chỉnh sửa, có bảo vệ an toàn.
         </p>
 
         <div style={panelStyle()}>
@@ -813,7 +843,7 @@ export default function OrchestratorPage() {
                 <Badge value={me.role} />
                 {me.legacyAdmin && (
                   <span style={{ color: "#f0ad4e", marginLeft: 6, fontSize: 12 }}>
-                    legacy-admin
+                    admin cũ
                   </span>
                 )}
               </span>
@@ -853,7 +883,7 @@ export default function OrchestratorPage() {
               disabled={adminKey.length === 0}
               style={btn("ghost")}
             >
-              Check Health
+              Kiểm tra hệ thống
             </button>
             <button onClick={logout} style={btn("red")}>
               Đăng xuất
@@ -876,21 +906,21 @@ export default function OrchestratorPage() {
                 </span>
                 <Badge value={String(health.db_status)} />
                 <span>
-                  rate-limit:{" "}
+                  giới hạn tần suất:{" "}
                   <strong>{String(health.rate_limit_provider)}</strong>
                 </span>
                 <Badge value={String(health.rate_limit_status)} />
               </div>
               <div style={{ marginTop: 6, color: "#9aa7ba" }}>
-                openai key: {health.has_openai_key ? "yes" : "no"} · anthropic
-                key: {health.has_anthropic_key ? "yes" : "no"} · execute tests:{" "}
-                {health.execute_tests_enabled ? "on" : "off"}
+                key openai: {health.has_openai_key ? "có" : "không"} · key
+                anthropic: {health.has_anthropic_key ? "có" : "không"} · chạy test:{" "}
+                {health.execute_tests_enabled ? "bật" : "tắt"}
               </div>
               <div style={{ marginTop: 6, color: "#9aa7ba" }}>
-                worker: <strong>{String(health.worker_provider)}</strong> · inline
-                cmds: {health.inline_commands_enabled ? "on" : "off"} · repo clone:{" "}
-                {health.repo_clone_configured ? "yes" : "no"} · hash strict:{" "}
-                {health.patch_hash_strict ? "on" : "off"} · claim:{" "}
+                worker: <strong>{String(health.worker_provider)}</strong> · lệnh
+                inline: {health.inline_commands_enabled ? "bật" : "tắt"} · clone repo:{" "}
+                {health.repo_clone_configured ? "có" : "không"} · hash nghiêm ngặt:{" "}
+                {health.patch_hash_strict ? "bật" : "tắt"} · nhận việc:{" "}
                 {String(health.worker_claim_mode)}
               </div>
               {health.worker_mode_warning ? (
@@ -904,8 +934,8 @@ export default function OrchestratorPage() {
                 </div>
               ) : null}
               <div style={{ marginTop: 6, color: "#9aa7ba" }}>
-                lease: {String(health.worker_lease_seconds)}s · heartbeat:{" "}
-                {String(health.worker_heartbeat_interval_ms)}ms · test runner:{" "}
+                lease: {String(health.worker_lease_seconds)}s · nhịp tim:{" "}
+                {String(health.worker_heartbeat_interval_ms)}ms · trình chạy test:{" "}
                 <strong>{String(health.test_runner_mode)}</strong>
               </div>
               {health.worker_lease_warning ? (
@@ -935,9 +965,9 @@ export default function OrchestratorPage() {
               <div style={{ marginTop: 6, color: "#9aa7ba" }}>
                 cron resume:{" "}
                 <strong>
-                  {health.cron_key_configured ? "configured" : "off"}
+                  {health.cron_key_configured ? "đã cấu hình" : "tắt"}
                 </strong>{" "}
-                · batch: {String(health.resume_batch_size)} · lock TTL:{" "}
+                · lô: {String(health.resume_batch_size)} · lock TTL:{" "}
                 {String(health.resume_lock_ttl_seconds)}s
               </div>
               {health.cron_resume_warning ? (
@@ -957,21 +987,21 @@ export default function OrchestratorPage() {
                   disabled={adminKey.length === 0}
                   style={btn("ghost")}
                 >
-                  Check Production Readiness
+                  Kiểm tra sẵn sàng Production
                 </button>
                 <button
                   onClick={() => void checkDryRun()}
                   disabled={adminKey.length === 0}
                   style={btn("ghost")}
                 >
-                  Production Dry-run Check
+                  Kiểm tra Dry-run
                 </button>
                 <button
                   onClick={() => void checkModelKeys()}
                   disabled={adminKey.length === 0}
                   style={btn("ghost")}
                 >
-                  Model API keys
+                  Key API model
                 </button>
               </div>
             )}
@@ -991,7 +1021,7 @@ export default function OrchestratorPage() {
             value={request}
             onChange={(e) => setRequest(e.target.value)}
             rows={4}
-            placeholder="Describe the software change you want..."
+            placeholder="Mô tả thay đổi phần mềm bạn muốn..."
             style={{
               width: "100%",
               marginTop: 8,
@@ -1020,7 +1050,7 @@ export default function OrchestratorPage() {
               }
               style={btn("primary")}
             >
-              {loading ? "Running..." : "Run orchestration"}
+              {loading ? "Đang chạy..." : "Chạy orchestration"}
             </button>
             <label style={{ color: "#9aa7ba" }}>
               <input
@@ -1028,7 +1058,7 @@ export default function OrchestratorPage() {
                 checked={humanApproved}
                 onChange={(e) => setHumanApproved(e.target.checked)}
               />{" "}
-              Pre-approve destructive migrations
+              Duyệt trước các migration phá huỷ
             </label>
           </div>
           {error && (
@@ -1150,23 +1180,23 @@ function SessionView({
     <div>
       <div style={panelStyle()}>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <strong>Result:</strong> <Badge value={session.status} />
+          <strong>Kết quả:</strong> <Badge value={session.status} />
           <span style={{ color: "#9aa7ba" }}>
-            rounds: {session.rounds} / 3
+            vòng: {session.rounds} / 3
           </span>
           <span style={{ marginLeft: "auto" }}>
-            approval: <Badge value={session.approval} />
+            duyệt: <Badge value={session.approval} />
           </span>
         </div>
         <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
           {canApprove && (
             <button onClick={() => onDecide("approve")} style={btn("green")}>
-              Approve
+              Duyệt
             </button>
           )}
           {canReject && (
             <button onClick={() => onDecide("reject")} style={btn("red")}>
-              Reject
+              Từ chối
             </button>
           )}
           {!canApprove && !canReject && (
@@ -1212,7 +1242,7 @@ function SessionView({
             <strong>{m.step}</strong>
             <Badge value={m.output.status} />
             <span style={{ color: "#9aa7ba", fontSize: 12 }}>
-              {m.provider} · round {m.round}
+              {m.provider} · vòng {m.round}
             </span>
           </div>
           <p style={{ margin: "8px 0 0" }}>{m.output.summary}</p>
@@ -1238,7 +1268,7 @@ function SessionView({
 
       {runs.length > 0 && (
         <div style={panelStyle()}>
-          <strong>Command runs (allowlist enforced)</strong>
+          <strong>Lệnh đã chạy (theo danh sách cho phép)</strong>
           {runs.map((r) => (
             <div key={r.id} style={{ marginTop: 8 }}>
               <code>$ {r.command}</code>{" "}
@@ -1285,7 +1315,7 @@ function UsersPanel({
     try {
       const res = await apiFetch("/api/ai-orchestrator/users");
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) throw new Error(data.error ?? "Thất bại");
       setUsers(data.users ?? []);
     } catch (e) {
       setErr((e as Error).message);
@@ -1305,7 +1335,7 @@ function UsersPanel({
         body: JSON.stringify({ email: newEmail, role: newRole }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      if (!res.ok) throw new Error(data.error ?? "Thất bại");
       setNewEmail("");
       await load();
     } catch (e) {
@@ -1327,7 +1357,7 @@ function UsersPanel({
           },
         );
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Failed");
+        if (!res.ok) throw new Error(data.error ?? "Thất bại");
         if (data.apiKey) setCreatedKey(data.apiKey);
         await load();
       } catch (e) {
@@ -1339,7 +1369,7 @@ function UsersPanel({
 
   return (
     <div style={panelStyle()}>
-      <h3 style={{ marginTop: 0 }}>Users (RBAC)</h3>
+      <h3 style={{ marginTop: 0 }}>Người dùng (RBAC)</h3>
       {err && <p style={{ color: "#e74c3c" }}>⚠ {err}</p>}
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <input
@@ -1373,7 +1403,7 @@ function UsersPanel({
           ))}
         </select>
         <button onClick={() => void createUser()} style={btn("primary")}>
-          Create user
+          Tạo người dùng
         </button>
       </div>
 
@@ -1388,7 +1418,7 @@ function UsersPanel({
           }}
         >
           <strong style={{ color: "#f0ad4e" }}>
-            New API key (shown once — copy now):
+            Khoá API mới (chỉ hiện một lần — sao chép ngay):
           </strong>
           <Pre text={createdKey} />
         </div>
@@ -1403,11 +1433,11 @@ function UsersPanel({
             <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
               {u.status === "active" ? (
                 <button onClick={() => void act(u.id, "disable")} style={btn("red")}>
-                  Disable
+                  Vô hiệu hoá
                 </button>
               ) : (
                 <button onClick={() => void act(u.id, "enable")} style={btn("green")}>
-                  Enable
+                  Kích hoạt
                 </button>
               )}
               {canManageKeys && (
@@ -1415,7 +1445,7 @@ function UsersPanel({
                   onClick={() => void act(u.id, "create_key")}
                   style={btn("ghost")}
                 >
-                  + API key
+                  + Khoá API
                 </button>
               )}
             </span>
@@ -1440,7 +1470,7 @@ function UsersPanel({
                       onClick={() => void act(u.id, "revoke_key", k.id)}
                       style={{ ...btn("ghost"), padding: "2px 8px" }}
                     >
-                      Revoke
+                      Thu hồi
                     </button>
                   )}
                 </div>
@@ -1454,17 +1484,17 @@ function UsersPanel({
 }
 
 const ORCH_EVENT_LABELS: Record<string, string> = {
-  orchestration_async_started: "Started (spec → critique → plan)",
-  orchestration_round_started: "Implement (round)",
-  orchestration_worker_job_linked: "Test job enqueued",
-  orchestration_waiting_for_worker: "Waiting for worker",
-  orchestration_resumed: "Resumed (review → QA)",
-  orchestration_completed: "Completed",
-  orchestration_failed: "Failed",
-  orchestration_cancelled: "Cancelled",
-  orchestration_resume_lock_acquired: "Cron resume: lock acquired",
-  orchestration_resume_lock_skipped: "Cron resume: skipped (locked)",
-  orchestration_resume_lock_released: "Cron resume: lock released",
+  orchestration_async_started: "Bắt đầu (spec → phản biện → kế hoạch)",
+  orchestration_round_started: "Triển khai (vòng)",
+  orchestration_worker_job_linked: "Đã thêm job test vào hàng đợi",
+  orchestration_waiting_for_worker: "Đang đợi worker",
+  orchestration_resumed: "Tiếp tục (review → QA)",
+  orchestration_completed: "Hoàn tất",
+  orchestration_failed: "Thất bại",
+  orchestration_cancelled: "Đã huỷ",
+  orchestration_resume_lock_acquired: "Cron resume: đã giữ lock",
+  orchestration_resume_lock_skipped: "Cron resume: bỏ qua (đang bị khoá)",
+  orchestration_resume_lock_released: "Cron resume: đã nhả lock",
 };
 
 function AsyncOrchestrationPanel({
@@ -1484,11 +1514,11 @@ function AsyncOrchestrationPanel({
   return (
     <div style={panelStyle()}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <strong>Async orchestration</strong>
+        <strong>Orchestration bất đồng bộ</strong>
         <Badge value={run.status} />
         <span style={{ color: "#9aa7ba", fontSize: 12 }}>
-          round {run.current_round}/{run.max_rounds}
-          {run.current_step ? ` · step ${run.current_step}` : ""}
+          vòng {run.current_round}/{run.max_rounds}
+          {run.current_step ? ` · bước ${run.current_step}` : ""}
         </span>
         <span style={{ color: "#9aa7ba", fontSize: 12 }}>
           run <code>{run.id.slice(0, 8)}</code>
@@ -1505,38 +1535,38 @@ function AsyncOrchestrationPanel({
             </>
           ) : null}
           {run.status === "waiting_for_worker" && !jobTerminal ? (
-            <span> · waiting… (start the worker: npm run ai:worker)</span>
+            <span> · đang đợi… (khởi động worker: npm run ai:worker)</span>
           ) : null}
         </div>
       )}
 
       {run.status === "waiting_for_worker" && jobTerminal && (
         <div style={{ marginTop: 6, color: "#5cb85c", fontSize: 12 }}>
-          Worker job đã xong — cron sẽ tự resume, hoặc bấm Resume để tiếp tục ngay.
+          Worker job đã xong — cron sẽ tự resume, hoặc bấm Tiếp tục để chạy ngay.
         </div>
       )}
 
       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
         {run.status === "waiting_for_worker" && (
           <button onClick={onResume} style={btn("ghost")}>
-            Resume
+            Tiếp tục
           </button>
         )}
         {!terminal && (
           <button onClick={onCancel} style={btn("red")}>
-            Cancel Orchestration
+            Huỷ
           </button>
         )}
         {terminal && (
           <button onClick={onOpenSession} style={btn("primary")}>
-            Open session
+            Mở phiên
           </button>
         )}
       </div>
 
       {run.events && run.events.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <strong style={{ fontSize: 12, color: "#9aa7ba" }}>Timeline</strong>
+          <strong style={{ fontSize: 12, color: "#9aa7ba" }}>Dòng thời gian</strong>
           <ol style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
             {run.events.map((e, i) => (
               <li key={i} style={{ color: "#9aa7ba", marginBottom: 2 }}>
@@ -1571,10 +1601,10 @@ function ReadinessPanel({ report }: { report: ReadinessView }) {
       }}
     >
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <strong>Production readiness</strong>
+        <strong>Mức sẵn sàng Production</strong>
         <Badge value={report.ok ? "ready" : blocking ? "not-ready" : "warnings"} />
         <span style={{ color: "#9aa7ba", fontSize: 12 }}>
-          env {report.environment}
+          môi trường {report.environment}
         </span>
         <span style={{ color: "#9aa7ba", fontSize: 12 }}>
           PASS {report.summary.pass} · WARN {report.summary.warn} · FAIL{" "}
@@ -1621,17 +1651,17 @@ function DryRunPanel({ status }: { status: DryRunView }) {
       }}
     >
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <strong>Production dry-run</strong>
+        <strong>Dry-run Production</strong>
         <Badge value={safe ? "safe" : "not-safe"} />
-        <span style={{ color: "#9aa7ba", fontSize: 12 }}>env {status.environment}</span>
+        <span style={{ color: "#9aa7ba", fontSize: 12 }}>môi trường {status.environment}</span>
         <span style={{ color: "#9aa7ba", fontSize: 12 }}>
-          readiness {status.readiness.ok ? "ok" : "not ok"} · FAIL{" "}
+          sẵn sàng {status.readiness.ok ? "ok" : "chưa ok"} · FAIL{" "}
           {status.readiness.summary.fail} · WARN {status.readiness.summary.warn}
         </span>
       </div>
       {status.blockers.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <strong style={{ color: "#e74c3c", fontSize: 12 }}>Blockers</strong>
+          <strong style={{ color: "#e74c3c", fontSize: 12 }}>Vấn đề chặn</strong>
           <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
             {status.blockers.map((b, i) => (
               <li key={i} style={{ color: "#e9b7bf", marginBottom: 2 }}>
@@ -1643,7 +1673,7 @@ function DryRunPanel({ status }: { status: DryRunView }) {
       )}
       {status.warnings.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <strong style={{ color: "#f0ad4e", fontSize: 12 }}>Warnings</strong>
+          <strong style={{ color: "#f0ad4e", fontSize: 12 }}>Cảnh báo</strong>
           <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
             {status.warnings.map((w, i) => (
               <li key={i} style={{ color: "#e7d3a8", marginBottom: 2 }}>
@@ -1655,7 +1685,7 @@ function DryRunPanel({ status }: { status: DryRunView }) {
       )}
       {status.next_actions.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <strong style={{ color: "#9aa7ba", fontSize: 12 }}>Next actions</strong>
+          <strong style={{ color: "#9aa7ba", fontSize: 12 }}>Việc tiếp theo</strong>
           <ol style={{ margin: "4px 0 0", paddingLeft: 18 }}>
             {status.next_actions.map((a, i) => (
               <li key={i} style={{ color: "#c7d2e0", marginBottom: 2 }}>
@@ -1819,7 +1849,7 @@ function ModelKeysPanel({
         fontSize: 12.5,
       }}
     >
-      <strong>Model API keys (Claude / OpenAI)</strong>
+      <strong>Key API model (Claude / OpenAI)</strong>
       {status && (
         <div style={{ marginTop: 6, color: "#9aa7ba" }}>
           OpenAI:{" "}
@@ -1838,7 +1868,7 @@ function ModelKeysPanel({
           )}
         </div>
       )}
-      <label style={{ display: "block", marginTop: 10 }}>OpenAI API key</label>
+      <label style={{ display: "block", marginTop: 10 }}>Khoá API OpenAI</label>
       <input
         type="password"
         value={openai}
@@ -1847,7 +1877,7 @@ function ModelKeysPanel({
         style={GATE_INPUT}
       />
       <label style={{ display: "block", marginTop: 10 }}>
-        Anthropic (Claude) API key
+        Khoá API Anthropic (Claude)
       </label>
       <input
         type="password"
@@ -1913,14 +1943,14 @@ function WorkerPanel({
       <div
         style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}
       >
-        <strong>Patch tests (sandbox)</strong>
+        <strong>Test patch (sandbox)</strong>
         {workerProvider && (
           <span style={{ color: "#9aa7ba", fontSize: 12 }}>
             worker: <Badge value={workerProvider} />
           </span>
         )}
         <span style={{ color: "#9aa7ba", fontSize: 12 }}>
-          apply patch → test trong workspace cô lập
+          áp dụng patch → chạy test trong workspace cô lập
         </span>
       </div>
       {inlineWarning && (
@@ -1939,12 +1969,12 @@ function WorkerPanel({
               !hasValidatedPatch ? "Cần Validate Patch trước" : undefined
             }
           >
-            {jobBusy ? "..." : "Run Patch Tests in Sandbox"}
+            {jobBusy ? "..." : "Chạy Test Patch trong Sandbox"}
           </button>
         )}
         {canRunTests && job && active && (
           <button onClick={onCancelJob} disabled={jobBusy} style={btn("red")}>
-            Cancel Job
+            Huỷ job
           </button>
         )}
         {!canRunTests && (
@@ -1990,7 +2020,7 @@ function WorkerPanel({
               </span>
             )}
             {active && (
-              <span style={{ color: "#9aa7ba", fontSize: 12 }}>polling…</span>
+              <span style={{ color: "#9aa7ba", fontSize: 12 }}>đang theo dõi…</span>
             )}
           </div>
           {baseMismatch && (
@@ -2005,7 +2035,7 @@ function WorkerPanel({
           )}
           {changed.length > 0 && (
             <div style={{ color: "#9aa7ba", fontSize: 12, marginTop: 4 }}>
-              changed files ({changed.length}): {changed.slice(0, 8).join(", ")}
+              file đã thay đổi ({changed.length}): {changed.slice(0, 8).join(", ")}
               {changed.length > 8 ? " …" : ""}
             </div>
           )}
@@ -2015,8 +2045,8 @@ function WorkerPanel({
               {job.error_message
                 ? job.error_message
                 : failedCmd
-                  ? `Failed on: ${failedCmd.command} (exit ${failedCmd.exitCode})`
-                  : "Job did not pass."}
+                  ? `Lỗi ở: ${failedCmd.command} (exit ${failedCmd.exitCode})`
+                  : "Job không thành công."}
             </p>
           )}
           {logText && <Pre text={logText} />}
@@ -2059,7 +2089,7 @@ function GithubPanel({
             disabled={prLoading}
             style={btn("ghost")}
           >
-            {prLoading ? "..." : "Validate Patch"}
+            {prLoading ? "..." : "Kiểm tra Patch"}
           </button>
         )}
         {canCreatePr && (
@@ -2073,7 +2103,7 @@ function GithubPanel({
                 : undefined
             }
           >
-            {prLoading ? "..." : "Create PR"}
+            {prLoading ? "..." : "Tạo PR"}
           </button>
         )}
         {!canValidatePatch && !canCreatePr && (
@@ -2107,7 +2137,7 @@ function GithubPanel({
           {/* Pull-request result */}
           {isPr && prState.ok && prState.mode === "dry_run" && (
             <div>
-              <Badge value="DRY RUN" /> <strong>no GitHub write.</strong>
+              <Badge value="DRY RUN" /> <strong>không ghi lên GitHub.</strong>
               <div style={{ color: "#9aa7ba", marginTop: 4 }}>
                 branch (dự kiến): <code>{prState.branchName}</code>
               </div>
@@ -2201,7 +2231,7 @@ function PatchArtifactView({ content }: { content: string }) {
       ))}
       {parsed.risk_notes && parsed.risk_notes.length > 0 && (
         <div style={{ marginTop: 6 }}>
-          <strong style={{ color: "#f0ad4e", fontSize: 12 }}>Risk notes:</strong>
+          <strong style={{ color: "#f0ad4e", fontSize: 12 }}>Lưu ý rủi ro:</strong>
           <ul style={{ margin: "4px 0 0", color: "#f0ad4e", fontSize: 12 }}>
             {parsed.risk_notes.map((r, i) => (
               <li key={i}>{r}</li>
