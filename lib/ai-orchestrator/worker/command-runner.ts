@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
 import { redactSecrets } from "../security/redact";
 import { WORKER_COMMAND_ALLOWLIST } from "./types";
 
@@ -99,11 +100,21 @@ export function resolveExecutable(command: string): {
   args: string[];
 } {
   const parts = command.trim().split(/\s+/);
-  let file = parts[0];
+  const file = parts[0];
   const args = parts.slice(1);
-  if (process.platform === "win32") {
-    if (file === "npm") file = "npm.cmd";
-    else if (file === "npx") file = "npx.cmd";
+  if (process.platform === "win32" && (file === "npm" || file === "npx")) {
+    // Node refuses to spawn .cmd/.bat with shell:false (CVE-2024-27980 fix), so
+    // npm.cmd fails on Windows. Run the CLI's JS directly via node — no shell,
+    // still secure, and cross-platform.
+    const cli = file === "npm" ? "npm-cli.js" : "npx-cli.js";
+    const cliPath = join(
+      dirname(process.execPath),
+      "node_modules",
+      "npm",
+      "bin",
+      cli,
+    );
+    return { file: process.execPath, args: [cliPath, ...args] };
   }
   return { file, args };
 }
