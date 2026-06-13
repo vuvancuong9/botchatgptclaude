@@ -607,6 +607,28 @@ export default function OrchestratorPage() {
     [apiFetch],
   );
 
+  /** Silent refetch for live progress polling (no error flashing). */
+  const refreshSessionById = useCallback(
+    async (id: string) => {
+      try {
+        const res = await apiFetch(`/api/ai-orchestrator/sessions/${id}`);
+        if (res.ok) setDetail(await res.json());
+      } catch {
+        /* silent */
+      }
+    },
+    [apiFetch],
+  );
+
+  // Live progress: while the open session is still running, refresh every 4s.
+  useEffect(() => {
+    const sid = detail?.session.id;
+    const running = detail?.session.status === "running";
+    if (!sid || !running) return;
+    const t = setInterval(() => void refreshSessionById(sid), 4000);
+    return () => clearInterval(t);
+  }, [detail?.session.id, detail?.session.status, refreshSessionById]);
+
   const decide = useCallback(
     async (action: "approve" | "reject") => {
       if (!detail) return;
@@ -1112,6 +1134,26 @@ export default function OrchestratorPage() {
   );
 }
 
+/** Friendly Vietnamese labels for each pipeline step (chat-style view). */
+const STEP_INFO: Record<string, { icon: string; who: string; label: string }> = {
+  GPT_PRODUCT_SPEC: { icon: "📝", who: "GPT", label: "Viết spec (đề xuất kỹ thuật)" },
+  CLAUDE_CRITICAL_REVIEW: { icon: "🔍", who: "Claude", label: "Phản biện spec" },
+  GPT_IMPLEMENTATION_PLAN: { icon: "🗺️", who: "GPT", label: "Lập kế hoạch triển khai" },
+  CLAUDE_CODE_IMPLEMENTER: { icon: "💻", who: "Claude", label: "Viết code (patch)" },
+  TEST_RUNNER: { icon: "⚙️", who: "Worker", label: "Chạy test trong sandbox" },
+  GPT_CODE_REVIEWER: { icon: "👀", who: "GPT", label: "Review code" },
+  QA_JUDGE: { icon: "⚖️", who: "QA", label: "Chấm điểm cuối" },
+};
+const STEP_ORDER = [
+  "GPT_PRODUCT_SPEC",
+  "CLAUDE_CRITICAL_REVIEW",
+  "GPT_IMPLEMENTATION_PLAN",
+  "CLAUDE_CODE_IMPLEMENTER",
+  "TEST_RUNNER",
+  "GPT_CODE_REVIEWER",
+  "QA_JUDGE",
+];
+
 function SessionView({
   detail,
   onDecide,
@@ -1207,6 +1249,38 @@ function SessionView({
         </div>
       </div>
 
+      {/* Thanh tiến độ 7 bước (kiểu chat) */}
+      <div style={panelStyle()}>
+        <strong>Tiến độ</strong>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+          {STEP_ORDER.map((s) => {
+            const done = messages.some((m) => m.step === s);
+            const info = STEP_INFO[s];
+            return (
+              <span
+                key={s}
+                style={{
+                  fontSize: 12,
+                  padding: "3px 8px",
+                  borderRadius: 12,
+                  border: "1px solid #263043",
+                  background: done ? "#16321f" : "#0b0f17",
+                  color: done ? "#5cb85c" : "#9aa7ba",
+                }}
+              >
+                {done ? "✓" : "○"} {info.icon} {info.who} — {info.label}
+              </span>
+            );
+          })}
+        </div>
+        <div style={{ marginTop: 6, color: "#9aa7ba", fontSize: 12 }}>
+          Đã chạy {new Set(messages.map((m) => m.step)).size}/7 bước
+          {session.status === "running"
+            ? " · đang chạy… (tự cập nhật mỗi 4 giây)"
+            : ""}
+        </div>
+      </div>
+
       <WorkerPanel
         canRunTests={canRunTests}
         onRunTests={onRunTests}
@@ -1229,8 +1303,16 @@ function SessionView({
         createPrBlockedByWorker={createPrBlockedByWorker}
       />
 
-      {messages.map((m) => (
-        <div key={m.id} style={panelStyle()}>
+      {messages.map((m) => {
+        const info = STEP_INFO[m.step];
+        const border =
+          m.provider === "anthropic"
+            ? "#5b8def"
+            : m.provider === "openai"
+              ? "#5cb85c"
+              : "#9aa7ba";
+        return (
+        <div key={m.id} style={{ ...panelStyle(), borderLeft: `3px solid ${border}` }}>
           <div
             style={{
               display: "flex",
@@ -1239,10 +1321,12 @@ function SessionView({
               flexWrap: "wrap",
             }}
           >
-            <strong>{m.step}</strong>
+            <strong>
+              {info ? `${info.icon} ${info.who} — ${info.label}` : m.step}
+            </strong>
             <Badge value={m.output.status} />
             <span style={{ color: "#9aa7ba", fontSize: 12 }}>
-              {m.provider} · vòng {m.round}
+              vòng {m.round}
             </span>
           </div>
           <p style={{ margin: "8px 0 0" }}>{m.output.summary}</p>
@@ -1264,7 +1348,8 @@ function SessionView({
             </div>
           ))}
         </div>
-      ))}
+        );
+      })}
 
       {runs.length > 0 && (
         <div style={panelStyle()}>
